@@ -2,12 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>Nagai AR Guide – Full Winter + Debug</title>
+  <title>Nagai AR Guide – Debug Simple</title>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
 
   <!-- Three.js -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/renderers/CSS3DRenderer.js"></script>
 
   <!-- AR.js (GPS + Camera) -->
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/three.js/build/ar-threex-location-only.js"></script>
@@ -56,7 +55,6 @@
       line-height: 1.4;
       transform: translateY(0);
     }
-
     /* デバッグパネル */
     #debugPanel {
       position: fixed;
@@ -81,7 +79,7 @@
 <div id="lang-switch">日本語 / English</div>
 <div id="debugPanel">GPS: waiting...</div>
 
-<!-- ======= 下部の説明プレート ======= -->
+<!-- 下部説明プレート -->
 <div id="spotPlate">
   <div id="spotTitle"></div>
   <div id="spotScrollWindow">
@@ -91,7 +89,7 @@
 
 <script>
 /* ============================================================
-   0. デバッグ用ログ関数
+   0. デバッグ & エラー表示
 ============================================================ */
 function dbg(msg) {
   const el = document.getElementById("debugPanel");
@@ -100,97 +98,105 @@ function dbg(msg) {
   el.textContent = `[${now}] ${msg}\n` + el.textContent;
 }
 
+window.onerror = function (msg, src, line, col, err) {
+  dbg("JS ERROR: " + msg + " @" + line + ":" + col);
+};
+
+dbg("script start");
+
 /* ============================================================
-   1. AR シーン初期化
+   1. シーン初期化
 ============================================================ */
-let scene = new THREE.Scene();
-let camera = new THREE.Camera();
+const scene  = new THREE.Scene();
+const camera = new THREE.Camera();
 scene.add(camera);
 
-let renderer = new THREE.WebGLRenderer({ alpha: true });
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.domElement.style.position = "absolute";
 renderer.domElement.style.top = "0px";
 document.body.appendChild(renderer.domElement);
 
-/* CSS3D */
-let cssRenderer = new THREE.CSS3DRenderer();
-cssRenderer.setSize(window.innerWidth, window.innerHeight);
-cssRenderer.domElement.style.position = "absolute";
-cssRenderer.domElement.style.top = "0px";
-document.body.appendChild(cssRenderer.domElement);
+dbg("Three.js renderer ready");
 
-/* AR.js GPS用（カメラ映像） */
-let arjs = new THREEx.LocationBased(scene, camera);
-let cam = new THREEx.WebcamRenderer(renderer);
+/* === AR.js (THREEx) 初期化（失敗しても落ちないように） === */
+let arLocation = null;
+let arCam      = null;
+
+try {
+  if (window.THREEx && THREEx.LocationBased && THREEx.WebcamRenderer) {
+    arLocation = new THREEx.LocationBased(scene, camera);
+    arCam      = new THREEx.WebcamRenderer(renderer);
+    dbg("AR.js THREEx initialized");
+  } else {
+    dbg("THREEx.* not available – AR.js not active");
+  }
+} catch (e) {
+  dbg("AR.js init error: " + e.message);
+}
 
 /* ============================================================
-   1-2. 冬キャラ（スノーマン）
+   2. 冬キャラ（スノーマン）
 ============================================================ */
 let snowman = null;
 
-function createSnowman() {
-  const group = new THREE.Group();
+(function createSnowman() {
+  const g = new THREE.Group();
 
-  // Body
-  const bodyGeo = new THREE.SphereGeometry(1.0, 32, 32);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(1.0, 32, 32),
+    new THREE.MeshStandardMaterial({ color: 0xffffff })
+  );
   body.position.set(0, -0.5, 0);
-  group.add(body);
+  g.add(body);
 
-  // Head
-  const headGeo = new THREE.SphereGeometry(0.6, 32, 32);
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-  const head = new THREE.Mesh(headGeo, headMat);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 32, 32),
+    new THREE.MeshStandardMaterial({ color: 0xffffff })
+  );
   head.position.set(0, 0.7, 0);
-  group.add(head);
+  g.add(head);
 
-  // Scarf
-  const scarfGeo = new THREE.TorusGeometry(0.7, 0.12, 16, 32);
-  const scarfMat = new THREE.MeshStandardMaterial({ color: 0xff5555 });
-  const scarf = new THREE.Mesh(scarfGeo, scarfMat);
+  const scarf = new THREE.Mesh(
+    new THREE.TorusGeometry(0.7, 0.12, 16, 32),
+    new THREE.MeshStandardMaterial({ color: 0xff5555 })
+  );
   scarf.rotation.x = Math.PI / 2;
   scarf.position.set(0, 0.2, 0);
-  group.add(scarf);
+  g.add(scarf);
 
-  // Eyes
   const eyeGeo = new THREE.SphereGeometry(0.06, 16, 16);
   const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
-  const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-  const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-  leftEye.position.set(-0.18, 0.9, 0.55);
-  rightEye.position.set(0.18, 0.9, 0.55);
-  group.add(leftEye, rightEye);
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+  eyeL.position.set(-0.18, 0.9, 0.55);
+  eyeR.position.set( 0.18, 0.9, 0.55);
+  g.add(eyeL, eyeR);
 
-  // Nose
-  const noseGeo = new THREE.ConeGeometry(0.1, 0.4, 16);
-  const noseMat = new THREE.MeshStandardMaterial({ color: 0xffa500 });
-  const nose = new THREE.Mesh(noseGeo, noseMat);
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.1, 0.4, 16),
+    new THREE.MeshStandardMaterial({ color: 0xffa500 })
+  );
   nose.rotation.x = Math.PI / 2;
   nose.position.set(0, 0.85, 0.7);
-  group.add(nose);
+  g.add(nose);
 
-  // Lighting
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(2, 4, 3);
-  group.add(dirLight);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(2, 4, 3);
+  g.add(dir);
+  const amb = new THREE.AmbientLight(0xffffff, 0.4);
+  g.add(amb);
 
-  const ambLight = new THREE.AmbientLight(0xffffff, 0.4);
-  group.add(ambLight);
+  g.position.set(0, -0.5, -4);
+  g.visible = false;
 
-  // Camera 前方に配置
-  group.position.set(0, -0.5, -4);
-
-  snowman = group;
-  snowman.visible = false;
+  snowman = g;
   scene.add(snowman);
-}
-
-createSnowman();
+  dbg("snowman created");
+})();
 
 /* ============================================================
-   2. Flower 長井線 + 観光スポット GPS
+   3. Flower 長井線 + 観光スポット GPS
 ============================================================ */
 const nagaiArSpots = [
   { id:"akayu", nameJa:"赤湯駅", nameEn:"Akayu Station", lat:38.047222, lng:140.149094 },
@@ -219,7 +225,7 @@ const nagaiArSpots = [
 ];
 
 /* ============================================================
-   3. 説明文（日英）
+   4. 説明文（日英）
 ============================================================ */
 const spotDescJa = {
   akayu:"フラワー長井線の起点駅。JR奥羽本線とも接続し、赤湯温泉の玄関口です。",
@@ -274,7 +280,7 @@ const spotDescEn = {
 };
 
 /* ============================================================
-   4. 音声ファイルマップ
+   5. 音声ファイルマップ（必要なものだけ）
 ============================================================ */
 const spotAudioMapJa = {
   nagai_station:"audio/nagai_station_history_ja.mp3",
@@ -295,7 +301,7 @@ const spotAudioMapEn = {
 };
 
 /* ============================================================
-   5. 距離計算
+   6. 距離計算 & 最寄り判定
 ============================================================ */
 function getDistanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -308,19 +314,14 @@ function getDistanceMeters(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-/* ============================================================
-   6. 最寄判定 + スノーマン表示
-============================================================ */
 let currentLang = "ja";
 let activeAudio = null;
 
 function updateNearest(lat, lng) {
-
   dbg(`updateNearest: lat=${lat.toFixed(6)}, lng=${lng.toFixed(6)}`);
 
   let nearest = null;
-  let minDist = 999999;
-
+  let minDist = Infinity;
   nagaiArSpots.forEach(sp => {
     const d = getDistanceMeters(lat, lng, sp.lat, sp.lng);
     if (d < minDist) {
@@ -334,86 +335,80 @@ function updateNearest(lat, lng) {
     return;
   }
 
-  dbg(`nearest: id=${nearest.id}, dist=${minDist.toFixed(1)}m`);
+  dbg(`nearest: ${nearest.id}, dist=${minDist.toFixed(1)}m`);
 
-  // ★ スノーマン表示条件（長井駅300m以内）
+  // スノーマン：長井駅 300m 以内
   if (snowman) {
     snowman.visible = (nearest.id === "nagai_station" && minDist < 300);
   }
 
-  // 下部プレート
+  // プレート表示
   document.getElementById("spotPlate").style.display = "block";
   document.getElementById("spotTitle").textContent =
-      currentLang === "ja" ? nearest.nameJa : nearest.nameEn;
+    currentLang === "ja" ? nearest.nameJa : nearest.nameEn;
 
   document.getElementById("spotScrollContent").textContent =
-      currentLang === "ja" ? (spotDescJa[nearest.id] || "") : (spotDescEn[nearest.id] || "");
+    currentLang === "ja"
+      ? (spotDescJa[nearest.id] || "")
+      : (spotDescEn[nearest.id] || "");
 
-  // 音声制御
+  // 音声
   if (activeAudio) activeAudio.pause();
 
   const audioUrl =
     currentLang === "ja" ? spotAudioMapJa[nearest.id] : spotAudioMapEn[nearest.id];
 
   if (audioUrl) {
-    dbg(`play audio: ${audioUrl}`);
+    dbg("play audio: " + audioUrl);
     activeAudio = new Audio(audioUrl);
-    activeAudio.play().catch(e => dbg("audio error: " + e));
+    activeAudio.play().catch(e => dbg("audio error: " + e.message));
   } else {
-    dbg("audio file not set for " + nearest.id);
+    dbg("audio not set for " + nearest.id);
   }
 }
 
 /* ============================================================
-   7. 自動スクロール
+   7. テキスト自動スクロール
 ============================================================ */
 let scrollStart = null;
-
 function animateScroll(ts) {
   if (!scrollStart) scrollStart = ts;
-
   const win = document.getElementById("spotScrollWindow");
   const con = document.getElementById("spotScrollContent");
-
   const Hwin = win.clientHeight;
   const Hcon = con.clientHeight;
-
-  const t = Math.min((ts - scrollStart) / 20000, 1); // 20秒で 1 周
+  const t = Math.min((ts - scrollStart) / 20000, 1);
   const y = (1 - t) * Hwin - Hcon;
-
   con.style.transform = `translateY(${y}px)`;
-
   if (t >= 1) scrollStart = ts;
-
-  window.requestAnimationFrame(animateScroll);
+  requestAnimationFrame(animateScroll);
 }
-
-window.requestAnimationFrame(animateScroll);
+requestAnimationFrame(animateScroll);
 
 /* ============================================================
    8. 言語切替
 ============================================================ */
 document.getElementById("lang-switch").addEventListener("click", () => {
   currentLang = currentLang === "ja" ? "en" : "ja";
-  dbg("language changed: " + currentLang);
+  dbg("language: " + currentLang);
 });
 
 /* ============================================================
-   9. GPS 更新（watchPosition + デバッグ表示）
+   9. GPS 取得（watchPosition）
 ============================================================ */
 if (!("geolocation" in navigator)) {
   dbg("このブラウザでは位置情報が使えません");
 } else {
-  dbg("GPS 要求を開始します");
+  dbg("GPS watchPosition start");
   navigator.geolocation.watchPosition(
-    (pos) => {
+    pos => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
-      dbg(`位置更新: lat=${lat.toFixed(6)}, lng=${lng.toFixed(6)}`);
+      dbg(`position: lat=${lat.toFixed(6)}, lng=${lng.toFixed(6)}`);
       updateNearest(lat, lng);
     },
-    (err) => {
-      dbg(`GPS エラー: ${err.code} ${err.message}`);
+    err => {
+      dbg(`GPS error: code=${err.code} message=${err.message}`);
     },
     {
       enableHighAccuracy: true,
@@ -427,12 +422,15 @@ if (!("geolocation" in navigator)) {
    10. レンダリングループ
 ============================================================ */
 function renderLoop() {
-  cam.update();
+  if (arCam && arCam.update) {
+    arCam.update();
+  }
   renderer.render(scene, camera);
-  cssRenderer.render(scene, camera);
   requestAnimationFrame(renderLoop);
 }
 renderLoop();
+
+dbg("script end");
 
 </script>
 </body>
