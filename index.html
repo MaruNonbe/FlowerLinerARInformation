@@ -2,12 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>Nagai AR Guide – Audio Button + Debug Toggle</title>
+  <title>Nagai AR Guide – Audio Button + Debug Toggle (No CSS3D)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
 
   <!-- Three.js -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/renderers/CSS3DRenderer.js"></script>
 
   <!-- AR.js (GPS + Camera) -->
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/three.js/build/ar-threex-location-only.js"></script>
@@ -175,13 +174,6 @@ renderer.domElement.style.position = "absolute";
 renderer.domElement.style.top = "0px";
 document.body.appendChild(renderer.domElement);
 dbg("Three.js renderer ready");
-
-let cssRenderer = new THREE.CSS3DRenderer();
-cssRenderer.setSize(window.innerWidth, window.innerHeight);
-cssRenderer.domElement.style.position = "absolute";
-cssRenderer.domElement.style.top = "0px";
-document.body.appendChild(cssRenderer.domElement);
-dbg("CSS3DRenderer ready");
 
 /* AR.js (THREEx) 初期化（安全に） */
 let arjs = null;
@@ -389,7 +381,6 @@ let currentAudioUrl = null;
 
 const audioBtn = document.getElementById("audioGuideBtn");
 
-/* ボタンラベル更新 */
 function updateAudioButtonLabel() {
   if (!currentAudioUrl) {
     audioBtn.textContent = currentLang === "ja" ? "音声なし" : "No audio";
@@ -421,12 +412,10 @@ function updateNearest(lat, lng) {
 
   dbg(`nearest: id=${nearest.id}, dist=${minDist.toFixed(1)}m`);
 
-  // 長井駅 300m以内でスノーマン表示
   if (snowman) {
     snowman.visible = (nearest.id === "nagai_station" && minDist < 300);
   }
 
-  // プレート表示
   document.getElementById("spotPlate").style.display = "block";
   document.getElementById("spotTitle").textContent =
       currentLang === "ja" ? nearest.nameJa : nearest.nameEn;
@@ -434,13 +423,11 @@ function updateNearest(lat, lng) {
   document.getElementById("spotScrollContent").textContent =
       currentLang === "ja" ? (spotDescJa[nearest.id] || "") : (spotDescEn[nearest.id] || "");
 
-  // 再生中音声を停止
   if (activeAudio) {
     activeAudio.pause();
     activeAudio.currentTime = 0;
   }
 
-  // 現在のスポットに対応する音声URLだけ記録（自動再生しない）
   currentAudioUrl =
     currentLang === "ja" ? spotAudioMapJa[nearest.id] : spotAudioMapEn[nearest.id];
 
@@ -488,14 +475,11 @@ requestAnimationFrame(animateScroll);
 document.getElementById("lang-switch").addEventListener("click", () => {
   currentLang = currentLang === "ja" ? "en" : "ja";
   dbg("language changed: " + currentLang);
-
-  // 言語変更時、現在の位置で updateNearest を再実行したいところですが
-  // ここではボタンラベルだけ更新しておきます。
   updateAudioButtonLabel();
 });
 
 /* ============================================================
-   10. GPS 更新（watchPosition）
+   10. GPS 更新
 ============================================================ */
 if (!("geolocation" in navigator)) {
   dbg("このブラウザでは位置情報が使えません");
@@ -525,7 +509,6 @@ if (!("geolocation" in navigator)) {
 function renderLoop() {
   if (cam) cam.update();
   renderer.render(scene, camera);
-  cssRenderer.render(scene, camera);
   requestAnimationFrame(renderLoop);
 }
 renderLoop();
