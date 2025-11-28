@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>Nagai AR Guide – Audio Button + Debug Toggle (No CSS3D)</title>
+  <title>Nagai AR Guide – Audio Button + Debug Toggle</title>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
 
   <!-- Three.js -->
@@ -137,6 +137,9 @@
   </div>
 </div>
 
+<!-- 共通オーディオ（非表示） -->
+<audio id="spotAudio" preload="auto"></audio>
+
 <script>
 /* ============================================================
    0. デバッグ & エラーキャッチ
@@ -175,7 +178,7 @@ renderer.domElement.style.top = "0px";
 document.body.appendChild(renderer.domElement);
 dbg("Three.js renderer ready");
 
-/* AR.js (THREEx) 初期化（安全に） */
+/* AR.js (THREEx) 初期化（あれば使う） */
 let arjs = null;
 let cam = null;
 try {
@@ -376,10 +379,12 @@ function getDistanceMeters(lat1, lon1, lat2, lon2) {
    6. 最寄判定 + スノーマン表示
 ============================================================ */
 let currentLang = "ja";
-let activeAudio = null;
 let currentAudioUrl = null;
+let lastLat = null;
+let lastLng = null;
 
 const audioBtn = document.getElementById("audioGuideBtn");
+const audioElement = document.getElementById("spotAudio");
 
 function updateAudioButtonLabel() {
   if (!currentAudioUrl) {
@@ -392,6 +397,9 @@ function updateAudioButtonLabel() {
 }
 
 function updateNearest(lat, lng) {
+  lastLat = lat;
+  lastLng = lng;
+
   dbg(`updateNearest: lat=${lat.toFixed(6)}, lng=${lng.toFixed(6)}`);
 
   let nearest = null;
@@ -412,24 +420,29 @@ function updateNearest(lat, lng) {
 
   dbg(`nearest: id=${nearest.id}, dist=${minDist.toFixed(1)}m`);
 
+  // 長井駅 300m以内でスノーマン表示
   if (snowman) {
     snowman.visible = (nearest.id === "nagai_station" && minDist < 300);
   }
 
-  document.getElementById("spotPlate").style.display = "block";
-  document.getElementById("spotTitle").textContent =
-      currentLang === "ja" ? nearest.nameJa : nearest.nameEn;
+  // 説明プレート
+  const plate = document.getElementById("spotPlate");
+  const titleEl = document.getElementById("spotTitle");
+  const contentEl = document.getElementById("spotScrollContent");
 
-  document.getElementById("spotScrollContent").textContent =
+  plate.style.display = "block";
+  titleEl.textContent =
+      currentLang === "ja" ? nearest.nameJa : nearest.nameEn;
+  contentEl.textContent =
       currentLang === "ja" ? (spotDescJa[nearest.id] || "") : (spotDescEn[nearest.id] || "");
 
-  if (activeAudio) {
-    activeAudio.pause();
-    activeAudio.currentTime = 0;
-  }
+  // 再生中の音声を停止
+  audioElement.pause();
+  audioElement.currentTime = 0;
 
+  // 現在スポットの音声URLだけセット（再生はボタンで）
   currentAudioUrl =
-    currentLang === "ja" ? spotAudioMapJa[nearest.id] : spotAudioMapEn[nearest.id];
+      currentLang === "ja" ? spotAudioMapJa[nearest.id] : spotAudioMapEn[nearest.id];
 
   updateAudioButtonLabel();
 }
@@ -442,17 +455,18 @@ audioBtn.addEventListener("click", () => {
     dbg("audio button clicked but no url");
     return;
   }
-  if (activeAudio) {
-    activeAudio.pause();
-    activeAudio.currentTime = 0;
-  }
   dbg("play audio: " + currentAudioUrl);
-  activeAudio = new Audio(currentAudioUrl);
-  activeAudio.play().catch(e => dbg("audio error: " + e.message));
+
+  audioElement.src = currentAudioUrl;
+  audioElement.currentTime = 0;
+
+  audioElement.play()
+    .then(() => dbg("audio playing"))
+    .catch(e => dbg("audio error: " + e.message));
 });
 
 /* ============================================================
-   8. スクロール
+   8. スクロール（下から上へループ）
 ============================================================ */
 let scrollStart = null;
 function animateScroll(ts) {
@@ -475,7 +489,13 @@ requestAnimationFrame(animateScroll);
 document.getElementById("lang-switch").addEventListener("click", () => {
   currentLang = currentLang === "ja" ? "en" : "ja";
   dbg("language changed: " + currentLang);
-  updateAudioButtonLabel();
+
+  // 位置が分かっていれば、その位置で再計算
+  if (lastLat !== null && lastLng !== null) {
+    updateNearest(lastLat, lastLng);
+  } else {
+    updateAudioButtonLabel();
+  }
 });
 
 /* ============================================================
