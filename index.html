@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>長井駅 ARプレート & GPSスポット WebAR版</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0, user-scalable=no" />
+
+  <!-- Three.js & CSS3DRenderer -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/renderers/CSS3DRenderer.js"></script>
+
+  <!-- AR.js Location-based (GPS) -->
+  <script src="https://rawcdn.githack.com/AR-js-org/AR.js/master/three.js/build/ar-threex-location-only.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    /* カメラ映像（背景） */
+    #camera {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 0;
+      background: #000;
+    }
+
+    /* 音声ONボタン */
+    #audio-btn {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      z-index: 3;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: none;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* ==== 長井駅 沿革プレート ==== */
+    .station-plate-root {
+      width: 480px;
+      height: 800px;
+      position: relative;
+      box-sizing: border-box;
+      border-radius: 24px;
+      padding: 16px 20px;
+      background: rgba(5, 10, 40, 0.75); /* PNGに差し替え可 */
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      color: #fff;
+      backdrop-filter: blur(6px);
+    }
+
+    .station-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      letter-spacing: 0.1em;
+    }
+
+    .station-sub {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-bottom: 8px;
+    }
+
+    .station-divider {
+      height: 1px;
+      background: linear-gradient(to right,
+        rgba(255,255,255,0.7),
+        rgba(255,255,255,0));
+      margin-bottom: 10px;
+    }
+
+    .station-scroll-window {
+      position: relative;
+      width: 100%;
+      height: calc(100% - 80px);
+      overflow: hidden;
+      mask-image: linear-gradient(to top,
+        transparent 0%,
+        rgba(0,0,0,1) 10%,
+        rgba(0,0,0,1) 90%,
+        transparent 100%);
+      -webkit-mask-image: linear-gradient(to top,
+        transparent 0%,
+        rgba(0,0,0,1) 10%,
+        rgba(0,0,0,1) 90%,
+        transparent 100%);
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .station-scroll-content {
+      position: absolute;
+      width: 100%;
+      transform: translateY(100%); /* 最初は下からスタート */
+    }
+
+    /* ==== 周辺スポット用の小さいプレート ==== */
+    .spot-plate-root {
+      width: 320px;
+      padding: 18px 20px;
+      color: #fff;
+      background: rgba(5,10,40,0.8);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.4);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+      box-sizing: border-box;
+    }
+
+    .spot-name {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .spot-category {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-bottom: 6px;
+    }
+
+    .spot-text {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .spot-distance {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 背景カメラ映像 -->
+<video id="camera" autoplay playsinline muted></video>
+
+<!-- 音声ガイド用（ファイルは差し替え）-->
+<audio id="spot-audio"></audio>
+
+<button id="audio-btn">🔊 音声ガイドを有効にする</button>
+
+<script>
+/* ============================================================
+   0. 背景カメラの起動（WebAR的な見た目）
+============================================================ */
+const cameraVideo = document.getElementById("camera");
+
+(async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
+    });
+    cameraVideo.srcObject = stream;
+  } catch (e) {
+    console.error("カメラ取得に失敗しました:", e);
+  }
+})();
+
+/* ============================================================
+   1. 観光スポット JSON（長井駅も含める）
+============================================================ */
+const nagaiArSpots = [
+  {
+    id: "nagai_station",
+    name: "長井駅",
+    lat: 38.10694,
+    lng: 140.03378,
+    category: "駅",
+    shortText: "フラワー長井線の中心駅。観光と交流の玄関口。",
+    hasHistoryPlate: true
+  },
+  {
+    id: "michi_no_eki_kawa_no_minato",
+    name: "道の駅 川のみなと長井",
+    lat: 38.10906,
+    lng: 140.04381,
+    category: "道の駅",
+    shortText: "最上川沿いの物産館と観光案内の拠点。",
+    hasHistoryPlate: false
+  },
+  {
+    id: "nagai_ayame_park",
+    name: "長井あやめ公園",
+    lat: 38.11594,
+    lng: 140.03319,
+    category: "公園",
+    shortText: "500種100万本のあやめが咲く名所。",
+    hasHistoryPlate: false
+  },
+  {
+    id: "isazawa_kubo_zakura",
+    name: "伊佐沢の久保桜",
+    lat: 38.09440,
+    lng: 140.06701,
+    category: "桜の名所",
+    shortText: "樹齢約1200年・国指定天然記念物。",
+    hasHistoryPlate: false
+  },
+  {
+    id: "kyu_marudai_ogiya",
+    name: "旧丸大扇屋",
+    lat: 38.11201,
+    lng: 140.03611,
+    category: "歴史的建造物",
+    shortText: "舟運で栄えた呉服商の屋敷（県指定文化財）。",
+    hasHistoryPlate: false
+  }
+];
+
+/* スポットごとの音声ファイル（日本語 or 英語で差し替え） */
+const spotAudioMap = {
+  // 例：英語音声を入れるなら英語版 mp3 をここに
+  nagai_station: "audio/nagai_station_history_en.mp3",
+  michi_no_eki_kawa_no_minato: "audio/michi_en.mp3",
+  nagai_ayame_park: "audio/ayame_en.mp3",
+  isazawa_kubo_zakura: "audio/kubo_zakura_en.mp3",
+  kyu_marudai_ogiya: "audio/marudai_ogiya_en.mp3"
+};
+
+
+/* ============================================================
+   2. Three.js + CSS3DRenderer
+============================================================ */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(
+  40,
+  window.innerWidth / window.innerHeight,
+  1,
+  5000
+);
+camera.position.set(0, 0, 1000);
+
+const renderer = new THREE.CSS3DRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// カメラの上にオーバーレイさせる
+renderer.domElement.style.position = "fixed";
+renderer.domElement.style.top = "0";
+renderer.domElement.style.left = "0";
+renderer.domElement.style.zIndex = "1";
+renderer.domElement.style.pointerEvents = "none"; // タップはボタンに通す
+
+
+/* ============================================================
+   3. 長井駅の沿革スクロールプレート
+============================================================ */
+const stationPlateEl = document.createElement("div");
+stationPlateEl.className = "station-plate-root";
+
+const stationTitleEl = document.createElement("div");
+stationTitleEl.className = "station-title";
+stationTitleEl.textContent = "長井駅の沿革";
+
+const stationSubEl = document.createElement("div");
+stationSubEl.className = "station-sub";
+stationSubEl.textContent = "Nagai Station History (Digest)";
+
+const stationDividerEl = document.createElement("div");
+stationDividerEl.className = "station-divider";
+
+const stationScrollWindowEl = document.createElement("div");
+stationScrollWindowEl.className = "station-scroll-window";
+
+const stationScrollContentEl = document.createElement("div");
+stationScrollContentEl.className = "station-scroll-content";
+
+/* スクロールさせる本文（日本語） */
+const stationText = `
+1922年（大正11年）
+長井駅が開業。
+当時は国鉄長井線の主要駅として、
+物資輸送と人々の移動を支えました。
+
+1987年（昭和62年）の国鉄分割民営化を経て、
+翌1988年（昭和63年）には
+山形鉄道フラワー長井線として
+第三セクターに移管されました。
+
+その後、駅舎は地域に開かれた施設として整備され、
+観光案内やイベントの拠点としても
+活用されるようになりました。
+
+現在の長井駅は、
+フラワー長井線の中心駅であり、
+観光客の玄関口として、
+そして地域の方々が集う
+コミュニティの場として
+親しまれています。
+
+この駅から広がる長井市は、
+最上川舟運の歴史、
+豊かな田園風景、
+黒獅子まつりなどの文化が
+今も息づくまちです。
+`.trim();
+
+stationScrollContentEl.textContent = stationText;
+
+stationScrollWindowEl.appendChild(stationScrollContentEl);
+stationPlateEl.appendChild(stationTitleEl);
+stationPlateEl.appendChild(stationSubEl);
+stationPlateEl.appendChild(stationDividerEl);
+stationPlateEl.appendChild(stationScrollWindowEl);
+
+const stationPlateObj = new THREE.CSS3DObject(stationPlateEl);
+stationPlateObj.position.set(0, 0, -600);
+scene.add(stationPlateObj);
+
+stationPlateEl.style.display = "none";
+
+let stationScrollActive = false;
+let stationScrollStartTime = null;
+const STATION_SCROLL_DURATION = 35000;
+
+
+/* ============================================================
+   4. 周辺スポット用プレート
+============================================================ */
+const spotPlateEl = document.createElement("div");
+spotPlateEl.className = "spot-plate-root";
+
+const spotNameEl = document.createElement("div");
+spotNameEl.className = "spot-name";
+
+const spotCategoryEl = document.createElement("div");
+spotCategoryEl.className = "spot-category";
+
+const spotTextEl = document.createElement("div");
+spotTextEl.className = "spot-text";
+
+const spotDistanceEl = document.createElement("div");
+spotDistanceEl.className = "spot-distance";
+
+spotPlateEl.appendChild(spotNameEl);
+spotPlateEl.appendChild(spotCategoryEl);
+spotPlateEl.appendChild(spotTextEl);
+spotPlateEl.appendChild(spotDistanceEl);
+
+const spotPlateObj = new THREE.CSS3DObject(spotPlateEl);
+spotPlateObj.position.set(0, -300, -500);
+scene.add(spotPlateObj);
+spotPlateEl.style.display = "none";
+
+
+/* ============================================================
+   5. 音声ガイド制御
+============================================================ */
+const audioEl = document.getElementById("spot-audio");
+const audioBtn = document.getElementById("audio-btn");
+let audioEnabled = false;
+let currentAudioSpotId = null;
+
+audioBtn.addEventListener("click", () => {
+  audioEnabled = true;
+  audioBtn.style.display = "none";
+});
+
+function playSpotAudio(spotId) {
+  if (!audioEnabled) return;
+  const src = spotAudioMap[spotId];
+  if (!src) return;
+
+  if (currentAudioSpotId === spotId && !audioEl.paused) return;
+
+  currentAudioSpotId = spotId;
+  audioEl.src = src;
+  audioEl.play().catch(err => {
+    console.warn("音声再生エラー:", err);
+  });
+}
+
+
+/* ============================================================
+   6. 距離計算（Haversine）
+============================================================ */
+function getDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = v => (v * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) ** 2;
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+
+/* ============================================================
+   7. AR.js LocationBased（GPS）
+============================================================ */
+let currentLat = null;
+let currentLng = null;
+
+const gps = new THREEx.LocationBased(scene, camera);
+
+gps.on("positionupdate", function(pos) {
+  currentLat = pos.coords.latitude;
+  currentLng = pos.coords.longitude;
+
+  console.log("現在地:", currentLat, currentLng);
+
+  updateSpotByLocation(currentLat, currentLng);
+});
+
+gps.startGps();
+
+
+/* ============================================================
+   8. 位置に応じた表示切り替え
+============================================================ */
+function updateSpotByLocation(lat, lng) {
+  let nearest = null;
+  let minDist = Infinity;
+
+  nagaiArSpots.forEach(sp => {
+    const d = getDistanceMeters(lat, lng, sp.lat, sp.lng);
+    if (d < minDist) {
+      minDist = d;
+      nearest = sp;
+    }
+  });
+
+  if (!nearest) return;
+
+  // 長井駅：150m以内で歴史プレート
+  if (nearest.id === "nagai_station" && minDist < 150) {
+    stationPlateEl.style.display = "block";
+    stationScrollActive = true;
+    stationScrollStartTime = null;
+    stationScrollContentEl.style.transform = "translateY(100%)";
+
+    spotPlateEl.style.display = "none";
+
+    playSpotAudio("nagai_station");
+    return;
+  }
+
+  // その他スポット：200m以内でカード表示
+  if (minDist < 200) {
+    stationPlateEl.style.display = "none";
+    stationScrollActive = false;
+
+    spotPlateEl.style.display = "block";
+    spotNameEl.textContent = nearest.name;
+    spotCategoryEl.textContent = `カテゴリ：${nearest.category}`;
+    spotTextEl.textContent = nearest.shortText;
+    spotDistanceEl.textContent = `📍 距離：約 ${Math.floor(minDist)} m`;
+
+    playSpotAudio(nearest.id);
+  } else {
+    stationPlateEl.style.display = "none";
+    stationScrollActive = false;
+    spotPlateEl.style.display = "none";
+  }
+}
+
+
+/* ============================================================
+   9. アニメーションループ（スクロール + 描画）
+============================================================ */
+function animate(timestamp) {
+  if (stationScrollActive) {
+    if (!stationScrollStartTime) stationScrollStartTime = timestamp;
+
+    const elapsed = timestamp - stationScrollStartTime;
+    const hWindow = stationScrollWindowEl.clientHeight;
+    const hContent = stationScrollContentEl.clientHeight;
+
+    const t = Math.min(elapsed / STATION_SCROLL_DURATION, 1);
+    const y = (1 - t) * hWindow - hContent;
+
+    stationScrollContentEl.style.transform = `translateY(${y}px)`;
+
+    if (t >= 1) {
+      stationScrollStartTime = timestamp; // 繰り返し
+    }
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+
+/* ============================================================
+   10. リサイズ対応
+============================================================ */
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+
+</body>
+</html>
